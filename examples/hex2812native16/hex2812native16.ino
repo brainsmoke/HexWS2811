@@ -1,12 +1,30 @@
+/*
+ * Drive 16 LED strips at once over USB serial using (almost) 16 bit to 8 bit temporal dithering
+ *
+ * Protocol: ( [16 bit brightness]* [ FF FF FF F0 ] )*
+ *
+ * Brightness must be little endian integers in the (inclusive) range [0 .. 0xFF00]
+ *
+ * [ FF FF FF F0 ] is an end of frame marker and allows the protocol to synchronize
+ * in the event of an uneven number of bytes being written to the serial port
+ *
+ * The firmware is completely agnostic about the color ordering
+ * Each frame is divided into 16 strips each of N_LEDS_PER_STRIP*LED_VALUES values.
+ * Sending less than 16 strips worth of data will leave the old values in place.
+ *
+ * To reduce flickering, it is recommended not to send brightness values in the range [1 .. 0x1f]
+ *
+ */
+
 #include <HexWS2811z.h>
 #include <usb_dev.h>
 
-#define LED_BYTES 4
+#define LED_VALUES 4
 #define N_LEDS_PER_STRIP 60
-#define N_BYTES_PER_STRIP (N_LEDS_PER_STRIP * LED_BYTES)
+#define N_BYTES_PER_STRIP (N_LEDS_PER_STRIP * LED_VALUES)
 #define N_STRIPS 16
 #define N_LEDS (N_LEDS_PER_STRIP * N_STRIPS)
-#define N_VALUES (N_LEDS * LED_BYTES)
+#define N_VALUES (N_LEDS * LED_VALUES)
 
 uint16_t io_buf1[N_VALUES];
 uint16_t io_buf2[N_VALUES];
@@ -15,7 +33,6 @@ uint8_t res[N_VALUES];
 uint8_t buf1[N_VALUES];
 uint8_t buf2[N_VALUES];
 uint16_t *draw_buf, *in_buf, *unused_buf;
-unsigned int in_offset = 0;
 HexWS2811z *hex;
 
 
@@ -212,31 +229,74 @@ void scatter_bits(uint16_t *in, uint8_t *out)
     }
 
 }
+
+
+unsigned int in_offset = 0;
+unsigned int buf_align = 0;
+int bad_frame = 0, end_frame = 0;
+uint16_t c;
+
+void swapbufs()
+{
+	if (!bad_frame)
+	{
+		uint16_t *x = draw_buf;
+		draw_buf = in_buf;
+		in_buf = unused_buf;
+		unused_buf = x;
+	}
+	in_offset = 0;
+	end_frame = 0;
+	bad_frame = 0;
+}
+
 void handle_io()
 {
 	usb_packet_t *rx_packet = usb_rx(CDC_RX_ENDPOINT);
 	if (!rx_packet)
 		return;
 
-	for (int i=rx_packet->index; i<rx_packet->len-1; i+=2)
+	for (int i=rx_packet->index; i<rx_packet->len; i++)
 	{
-		uint16_t c = *(uint16_t*)&rx_packet->buf[i];
-		if (c != 0xffff)
+		if (buf_align)
 		{
-			if (in_offset < N_VALUES)
+			c |= (uint8_t)rx_packet->buf[i] << 8;
+
+			if (end_frame)
 			{
-				in_buf[in_offset] = c;
-				in_offset++;
+				if (c == 0xf0ff)
+					swapbufs();
+				else if ( (c&0xff) == 0xf0 ) /* synchronize, throw away frame */
+				{
+					c = (uint8_t)rx_packet->buf[i];
+					in_offset = 0;
+					end_frame = 0;
+					bad_frame = 0;
+					continue;
+				}
+				else
+				{
+					bad_frame = 1;
+					end_frame = (c == 0xffff);
+				}
 			}
+			else if (c <= 0xff00)
+			{
+				if (in_offset < N_VALUES)
+				{
+					in_buf[in_offset] = c;
+					in_offset++;
+				}
+			}
+			else if (c == 0xffff)
+				end_frame = 1;
+			else
+				bad_frame = 1;
 		}
 		else
-		{
-			uint16_t *x = draw_buf;
-			draw_buf = in_buf;
-			in_buf = unused_buf;
-			unused_buf = x;
-			in_offset = 0;
-		}
+			c = (uint8_t)rx_packet->buf[i];
+
+		buf_align ^= 1;
 	}
 
 	usb_free(rx_packet);
@@ -249,7 +309,6 @@ void setup()
 
 void loop()
 {
-
 	uint8_t *x, *old_frame = buf1, *new_frame = buf2;
 
 	draw_buf = io_buf1;
@@ -268,23 +327,28 @@ void loop()
 
 /*
 int i=0;
-uint32_t t0, t1=micros();
+uint32_t t0, t, tmax=0;
 */
     for (;;)
     {
+/*
+t0=micros();
+*/
         scatter_bits(draw_buf, new_frame);
         hex->show(new_frame);
         x=old_frame;
         old_frame = new_frame;
         new_frame = x;
 /*
+t=micros()-t0;
+if (t>tmax)
+	tmax = t;
 i++;
-if (i==100)
+if (i==4000)
 {
+	Serial.println(tmax);
 	i=0;
-	t0=t1;
-	t1=micros();
-	Serial.println(t1-t0);
+	tmax=0;
 }
 */
     }
