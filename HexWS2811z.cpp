@@ -98,11 +98,11 @@ void HexWS2811z::begin(void)
 	analogWrite(4, WS2811_TIMING_T1H);
 
 	// pin 16 triggers DMA(port B) on rising edge (configure for pin 3's waveform)
-	CORE_PIN16_CONFIG = PORT_PCR_IRQC(1)|PORT_PCR_MUX(3);
+	CORE_PIN16_CONFIG = PORT_PCR_IRQC(1)|PORT_PCR_MUX(3)|PORT_PCR_PE;
 	pinMode(3, INPUT_PULLUP); // pin 3 no longer needed
 
 	// pin 4 triggers DMA(port A) on both edges of high duty waveform
-	CORE_PIN4_CONFIG = PORT_PCR_IRQC(3)|PORT_PCR_MUX(3);
+	CORE_PIN4_CONFIG = PORT_PCR_IRQC(3)|PORT_PCR_MUX(3)|PORT_PCR_PE;
 
 	// DMA channel #2 writes the pixel data at 20% of the cycle
 //	dma2.TCD->SADDR = frameBuffer;
@@ -179,37 +179,23 @@ void HexWS2811z::show(void *frameBuffer)
 	// wait for any prior DMA operation
 	//Serial1.print("1");
 	while (update_in_progress) ; 
+	update_in_progress = 1;
 
 	dma2.TCD->SADDR = frameBuffer;
 
-	// wait for WS2811 reset
-	while (micros() - update_completed_at < LATCH_DELAY) ;
-
-	// ok to start, but we must be very careful to begin
-	// without any prior 3 x 800kHz DMA requests pending
 	uint32_t sc = FTM1_SC;
-	uint32_t cv = FTM1_C1V;
-	noInterrupts();
-	// CAUTION: this code is timing critical.  Any editing should be
-	// tested by verifying the oscilloscope trigger pulse at the end
-	// always occurs while both waveforms are still low.  Simply
-	// counting CPU cycles does not take into account other complex
-	// factors, like flash cache misses and bus arbitration from USB
-	// or other DMA.  Testing should be done with the oscilloscope
-	// display set at infinite persistence and a variety of other I/O
-	// performed to create realistic bus usage.  Even then, you really
-	// should not mess with this timing critical code!
-	update_in_progress = 1;
-	while (FTM1_CNT <= cv) ; 
-	while (FTM1_CNT > cv) ; // wait for beginning of an 800 kHz cycle
-	while (FTM1_CNT < cv) ;
-	FTM1_SC = sc & 0xE7;	// stop FTM1 timer (hopefully before it rolls over)
+	FTM1_SC = sc & 0xE7;	// stop FTM1 timer
+
+	FTM1_CNTIN = FTM1_MOD-1;
+	FTM1_CNT = 0xbeef;      // FTM1_CNT == FTM1_MOD
+	FTM1_CNTIN = 0;
+
 	PORTB_ISFR = (1<<0);    // clear any prior rising edge
-	PORTC_ISFR = (1<<0);	// clear any prior low duty falling edge
 	PORTA_ISFR = (1<<13);	// clear any prior high duty falling edge
 	dma2.enable();		// enable all 3 DMA channels
 	dma3.enable();
+	// wait for WS2811 reset
+	while (micros() - update_completed_at < LATCH_DELAY) ;
 	FTM1_SC = sc;		// restart FTM1 timer
-	interrupts();
 }
 
