@@ -107,8 +107,8 @@ void HexWS2811z::begin(void)
 	// DMA channel #2 writes the pixel data at 20% of the cycle
 //	dma2.TCD->SADDR = frameBuffer;
 	dma2.TCD->SADDR = NULL;
-	dma2.TCD->SOFF = 1;
-	dma2.TCD->ATTR_SRC = 0;
+	dma2.TCD->SOFF = 2;
+	dma2.TCD->ATTR_SRC = DMA_TCD_ATTR_SIZE_16BIT;
 	dma2.TCD->SLAST = -bufsize;
 
 	/* Send data to both PORT C and D in the same minor loop (executed after the same trigger( */
@@ -117,7 +117,7 @@ void HexWS2811z::begin(void)
     dma2.TCD->DADDR = &GPIOC_PDOR;
 	dma2.TCD->DOFF = PORT_DELTA;
                          /* loop GPIOC_PDOR, GPIOD_PDOR and back */
-	dma2.TCD->ATTR_DST = ((31 - __builtin_clz(PORT_DELTA*2)) << 3) | 0;
+	dma2.TCD->ATTR_DST = ((31 - __builtin_clz(PORT_DELTA*2)) << 3) | DMA_TCD_ATTR_SIZE_8BIT;
 	dma2.TCD->DLASTSGA = 0;
 
 	dma2.TCD->NBYTES = 2;
@@ -129,14 +129,14 @@ void HexWS2811z::begin(void)
 	// DMA channel #3 sets WS2811 high at the beginning of each cycle
     // and clears all the pins at 48% of the cycle
 	dma3.TCD->SADDR = ones_zeroes;
-	dma3.TCD->SOFF = 1;
-	dma3.TCD->ATTR_SRC = (2 << 3) | 0; /* loop modulo 4 */
+	dma3.TCD->SOFF = 2;
+	dma3.TCD->ATTR_SRC = (2 << 3) | DMA_TCD_ATTR_SIZE_16BIT; /* loop modulo 4 */
 	dma3.TCD->SLAST = 0;
 
     dma3.TCD->DADDR = &GPIOC_PDOR;
 	dma3.TCD->DOFF = PORT_DELTA;
                          /* loop GPIOC_PDOR, GPIOD_PDOR and back */
-	dma3.TCD->ATTR_DST = ((31 - __builtin_clz(PORT_DELTA*2)) << 3) | 0;
+	dma3.TCD->ATTR_DST = ((31 - __builtin_clz(PORT_DELTA*2)) << 3) | DMA_TCD_ATTR_SIZE_8BIT;
 	dma3.TCD->DLASTSGA = 0;
 
 	dma3.TCD->NBYTES = 2;
