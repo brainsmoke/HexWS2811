@@ -41,13 +41,14 @@
 
 class HexWS2801z {
 public:
-	HexWS2801z(uint32_t bufsize, uint16_t clockmask, int skipClear);
+	HexWS2801z(uint32_t bufsize, uint16_t clockmask, int skipClear, int freq=2000000);
 	void begin(void);
 	void show(void *frameBuffer);
 	int busy(void);
 
 private:
 	static uint32_t bufsize;
+	static int freq;
 	static DMAChannel dma2, dma3;
 	static uint16_t clockmask;
 	static int skipClear;
