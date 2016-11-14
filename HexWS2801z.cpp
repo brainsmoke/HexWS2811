@@ -192,10 +192,8 @@ void HexWS2801z::show(void *frameBuffer)
 	PORTA_ISFR = (1<<13);	// clear any prior high duty falling edge
 	dma2.enable();		// enable all 3 DMA channels
 	dma3.enable();
-
 	// wait for WS2801 reset
 	while (micros() - update_completed_at < LATCH_DELAY) ;
 	FTM1_SC = sc;		// restart FTM1 timer
-
 }
 
