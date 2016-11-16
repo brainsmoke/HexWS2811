@@ -30,7 +30,7 @@
 #include <string.h>
 #include "HexWS2801z.h"
 
-#define LATCH_DELAY 550
+#define LATCH_DELAY 1000
 
 uint32_t HexWS2801z::bufsize;
 int HexWS2801z::freq;
